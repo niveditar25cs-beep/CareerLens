@@ -43,7 +43,7 @@ async def notify_deadline_approaching(db: AsyncSession, student_id: int, opportu
     return await create_notification(
         db=db,
         student_id=student_id,
-        title="⏰ Deadline Approaching",
+        title="Deadline Approaching",
         message=f'The deadline for "{opportunity_title}" is coming up soon!',
         notification_type="deadline",
     )
@@ -54,7 +54,8 @@ async def notify_new_match(db: AsyncSession, student_id: int, opportunity_title:
     return await create_notification(
         db=db,
         student_id=student_id,
-        title="🎯 New Opportunity Match",
+        title="New Opportunity Match",
         message=f'A new opportunity "{opportunity_title}" matches your profile!',
         notification_type="new_match",
     )
+

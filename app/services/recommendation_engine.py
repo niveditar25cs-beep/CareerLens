@@ -4,9 +4,43 @@ Recommendation engine for matching students with relevant opportunities.
 
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
+from sqlalchemy import delete
 from typing import List
 from app.models.student import Student
 from app.models.opportunity import Opportunity
+from app.models.recommendation import Recommendation
+
+
+def calculate_match_score(student: Student, opp: Opportunity) -> float:
+    """Calculate a match score between a student profile and an opportunity."""
+    student_tokens = set()
+
+    if student.skills:
+        student_tokens.update([s.strip().lower() for s in student.skills.split(",") if s.strip()])
+    if student.interests:
+        student_tokens.update([i.strip().lower() for i in student.interests.split(",") if i.strip()])
+    if student.major:
+        student_tokens.add(student.major.strip().lower())
+
+    if not student_tokens:
+        return 0.0
+
+    opp_text = " ".join(
+        filter(
+            None,
+            [
+                opp.title,
+                opp.description,
+                opp.skills_required,
+                opp.category,
+                opp.company,
+            ],
+        )
+    ).lower()
+
+    matches = sum(1 for token in student_tokens if token in opp_text)
+    score = round(matches / max(len(student_tokens), 1), 2)
+    return score
 
 
 async def generate_recommendations(
@@ -17,7 +51,7 @@ async def generate_recommendations(
 ) -> List[Opportunity]:
     """
     Generate personalized opportunity recommendations for a student
-    based on their skills, interests, and profile.
+    based on their skills, interests, and profile, persisting scores to the database.
 
     Args:
         student: The student to generate recommendations for.
@@ -28,25 +62,38 @@ async def generate_recommendations(
     Returns:
         A list of recommended Opportunity objects.
     """
-    # TODO: Implement ML-based or heuristic recommendation logic
-    # Current placeholder: return latest opportunities matching student skills
-
-    student_skills = (student.skills or "").lower().split(",")
-    student_skills = [s.strip() for s in student_skills if s.strip()]
-
-    query = select(Opportunity).order_by(Opportunity.created_at.desc()).limit(limit)
+    query = select(Opportunity)
     result = await db.execute(query)
-    opportunities = result.scalars().all()
+    all_opportunities = result.scalars().all()
 
-    if not student_skills:
-        return opportunities
+    if not all_opportunities:
+        return []
 
-    # Simple keyword matching (placeholder for a smarter engine)
-    scored = []
-    for opp in opportunities:
-        opp_skills = (opp.skills_required or "").lower()
-        score = sum(1 for skill in student_skills if skill in opp_skills)
-        scored.append((score, opp))
+    # Score each opportunity
+    scored_opps = []
+    for opp in all_opportunities:
+        score = calculate_match_score(student, opp)
+        scored_opps.append((score, opp))
 
-    scored.sort(key=lambda x: x[0], reverse=True)
-    return [opp for _, opp in scored[:limit]]
+    # Sort descending by score, then by newest
+    scored_opps.sort(key=lambda x: (x[0], x[1].created_at or 0), reverse=True)
+    top_items = scored_opps[:limit]
+
+    # Save to recommendations table asynchronously
+    try:
+        await db.execute(
+            delete(Recommendation).where(Recommendation.student_id == student.id)
+        )
+        for score, opp in top_items:
+            rec = Recommendation(
+                student_id=student.id,
+                opportunity_id=opp.id,
+                score=float(score),
+            )
+            db.add(rec)
+        await db.commit()
+    except Exception:
+        await db.rollback()
+
+    return [opp for _, opp in top_items]
+

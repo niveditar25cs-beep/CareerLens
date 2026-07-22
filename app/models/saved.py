@@ -1,4 +1,5 @@
 from sqlalchemy import Column, Integer, ForeignKey, DateTime, UniqueConstraint
+from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from app.database.database import Base
 
@@ -11,6 +12,9 @@ class SavedOpportunity(Base):
     opportunity_id = Column(Integer, ForeignKey("opportunities.id", ondelete="CASCADE"), nullable=False)
     saved_at = Column(DateTime(timezone=True), server_default=func.now())
 
+    opportunity = relationship("Opportunity", lazy="joined")
+
     __table_args__ = (
         UniqueConstraint("student_id", "opportunity_id", name="uq_student_opportunity"),
     )
+
