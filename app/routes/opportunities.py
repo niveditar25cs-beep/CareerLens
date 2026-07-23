@@ -9,6 +9,7 @@ from app.models.student import Student
 from app.schemas.opportunity import OpportunityCreate, OpportunityResponse, OpportunityUpdate
 from app.schemas.saved import SavedOpportunityResponse
 from app.services.search import search_opportunities
+from app.services.ai_agent import run_opportunity_search_agent
 from app.utils.jwt_handler import get_current_student
 
 router = APIRouter()
@@ -154,4 +155,14 @@ async def unsave_opportunity(
 
     await db.delete(saved_item)
     await db.commit()
+
+
+@router.post("/agent/trigger", response_model=List[OpportunityResponse])
+async def trigger_ai_agent(
+    current_student: Student = Depends(get_current_student),
+    db: AsyncSession = Depends(get_db),
+):
+    """Trigger the Opportunity Search AI Agent to find personalized opportunities."""
+    opportunities = await run_opportunity_search_agent(student=current_student, db=db)
+    return opportunities
 
